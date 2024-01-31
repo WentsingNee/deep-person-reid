@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 
 __all__ = [
-    'osnet_x1_0', 'osnet_x0_75', 'osnet_x0_5', 'osnet_x0_25', 'osnet_ibn_x1_0'
+    'osnet_x1_0', 'osnet_x0_75', 'osnet_x0_5', 'osnet_x0_25', 'osnet_ibn_x1_0', 'osnet_my'
 ]
 
 pretrained_urls = {
@@ -18,7 +18,9 @@ pretrained_urls = {
     'osnet_x0_25':
     'https://drive.google.com/uc?id=1rb8UN5ZzPKRc_xvtHlyDh-cSz88YX9hs',
     'osnet_ibn_x1_0':
-    'https://drive.google.com/uc?id=1sr90V6irlYYDd4_4ISU2iruoRG8J__6l'
+    'https://drive.google.com/uc?id=1sr90V6irlYYDd4_4ISU2iruoRG8J__6l',
+    'osnet_my':
+    ''
 }
 
 
@@ -438,88 +440,109 @@ class OSNet(nn.Module):
             raise KeyError("Unsupported loss: {}".format(self.loss))
 
 
-def init_pretrained_weights(model, key=''):
-    """Initializes model with pretrained weights.
-    
-    Layers that don't match with pretrained layers in name or size are kept unchanged.
-    """
-    import os
-    import errno
-    import gdown
-    from collections import OrderedDict
+class InitPretrainedWeights:
 
-    def _get_torch_home():
-        ENV_TORCH_HOME = 'TORCH_HOME'
-        ENV_XDG_CACHE_HOME = 'XDG_CACHE_HOME'
-        DEFAULT_CACHE_DIR = '~/.cache'
-        torch_home = os.path.expanduser(
-            os.getenv(
-                ENV_TORCH_HOME,
-                os.path.join(
-                    os.getenv(ENV_XDG_CACHE_HOME, DEFAULT_CACHE_DIR), 'torch'
+    def __init__(self, key=''):
+        self.key = key
+        
+    def get_model_path(self):
+        import os
+        import errno
+
+        def _get_torch_home():
+            ENV_TORCH_HOME = 'TORCH_HOME'
+            ENV_XDG_CACHE_HOME = 'XDG_CACHE_HOME'
+            DEFAULT_CACHE_DIR = '~/.cache'
+            torch_home = os.path.expanduser(
+                os.getenv(
+                    ENV_TORCH_HOME,
+                    os.path.join(
+                        os.getenv(ENV_XDG_CACHE_HOME, DEFAULT_CACHE_DIR), 'torch'
+                    )
                 )
             )
-        )
-        return torch_home
+            return torch_home
 
-    torch_home = _get_torch_home()
-    model_dir = os.path.join(torch_home, 'checkpoints')
-    try:
-        os.makedirs(model_dir)
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            # Directory already exists, ignore.
-            pass
-        else:
-            # Unexpected OSError, re-raise.
-            raise
-    filename = key + '_imagenet.pth'
-    cached_file = os.path.join(model_dir, filename)
+        torch_home = _get_torch_home()
+        model_dir = os.path.join(torch_home, 'checkpoints')
+        try:
+            os.makedirs(model_dir)
+        except OSError as e:
+            if e.errno == errno.EEXIST:
+                # Directory already exists, ignore.
+                pass
+            else:
+                # Unexpected OSError, re-raise.
+                raise
+        filename = self.key + '_imagenet.pth'
+        cached_file = os.path.join(model_dir, filename)
+        return cached_file
 
-    if not os.path.exists(cached_file):
-        gdown.download(pretrained_urls[key], cached_file, quiet=False)
+    def __call__(self, model, pretrained_model=None):
+        """Initializes model with pretrained weights.
 
-    state_dict = torch.load(cached_file)
-    model_dict = model.state_dict()
-    new_state_dict = OrderedDict()
-    matched_layers, discarded_layers = [], []
+        Layers that don't match with pretrained layers in name or size are kept unchanged.
+        """
+        import os
+        import gdown
+        from collections import OrderedDict
 
-    for k, v in state_dict.items():
-        if k.startswith('module.'):
-            k = k[7:] # discard module.
+        if pretrained_model is None:
+            print(f"pretrained_model: {pretrained_model}")
+            pretrained_model = self.get_model_path()
 
-        if k in model_dict and model_dict[k].size() == v.size():
-            new_state_dict[k] = v
-            matched_layers.append(k)
-        else:
-            discarded_layers.append(k)
+        print(f"pretrained_model: {pretrained_model}")
+        print(f"key: {self.key}")
+        print(f"pretrained_urls[key]: {pretrained_urls[self.key]}")
 
-    model_dict.update(new_state_dict)
-    model.load_state_dict(model_dict)
+        exist = os.path.exists(pretrained_model)
+        print(f"exist: {exist}")
+        if not exist:
+            gdown.download(pretrained_urls[self.key], pretrained_model, quiet=False)
 
-    if len(matched_layers) == 0:
-        warnings.warn(
-            'The pretrained weights from "{}" cannot be loaded, '
-            'please check the key names manually '
-            '(** ignored and continue **)'.format(cached_file)
-        )
-    else:
-        print(
-            'Successfully loaded imagenet pretrained weights from "{}"'.
-            format(cached_file)
-        )
-        if len(discarded_layers) > 0:
-            print(
-                '** The following layers are discarded '
-                'due to unmatched keys or layer size: {}'.
-                format(discarded_layers)
+        state_dict = torch.load(pretrained_model)
+        if "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+        model_dict = model.state_dict()
+        new_state_dict = OrderedDict()
+        matched_layers, discarded_layers = [], []
+
+        for k, v in state_dict.items():
+            if k.startswith('module.'):
+                k = k[7:] # discard module.
+
+            if k in model_dict and model_dict[k].size() == v.size():
+                new_state_dict[k] = v
+                matched_layers.append(k)
+            else:
+                discarded_layers.append(k)
+
+        model_dict.update(new_state_dict)
+        model.load_state_dict(model_dict)
+
+        if len(matched_layers) == 0:
+            warnings.warn(
+                'The pretrained weights from "{}" cannot be loaded, '
+                'please check the key names manually '
+                '(** ignored and continue **)'.format(pretrained_model)
             )
+        else:
+            print(
+                'Successfully loaded imagenet pretrained weights from "{}"'.
+                format(pretrained_model)
+            )
+            if len(discarded_layers) > 0:
+                print(
+                    '** The following layers are discarded '
+                    'due to unmatched keys or layer size: {}'.
+                    format(discarded_layers)
+                )
 
 
 ##########
 # Instantiation
 ##########
-def osnet_x1_0(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
+def osnet_x1_0(num_classes=1000, loss='softmax', **kwargs):
     # standard size (width x1.0)
     model = OSNet(
         num_classes,
@@ -529,12 +552,10 @@ def osnet_x1_0(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
         loss=loss,
         **kwargs
     )
-    if pretrained:
-        init_pretrained_weights(model, key='osnet_x1_0')
-    return model
+    return model, InitPretrainedWeights(key='osnet_x1_0')
 
 
-def osnet_x0_75(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
+def osnet_x0_75(num_classes=1000, loss='softmax', **kwargs):
     # medium size (width x0.75)
     model = OSNet(
         num_classes,
@@ -544,12 +565,10 @@ def osnet_x0_75(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
         loss=loss,
         **kwargs
     )
-    if pretrained:
-        init_pretrained_weights(model, key='osnet_x0_75')
-    return model
+    return model, InitPretrainedWeights(key='osnet_x0_75')
 
 
-def osnet_x0_5(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
+def osnet_x0_5(num_classes=1000, loss='softmax', **kwargs):
     # tiny size (width x0.5)
     model = OSNet(
         num_classes,
@@ -559,12 +578,10 @@ def osnet_x0_5(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
         loss=loss,
         **kwargs
     )
-    if pretrained:
-        init_pretrained_weights(model, key='osnet_x0_5')
-    return model
+    return model, InitPretrainedWeights(key='osnet_x0_5')
 
 
-def osnet_x0_25(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
+def osnet_x0_25(num_classes=1000, loss='softmax', **kwargs):
     # very tiny size (width x0.25)
     model = OSNet(
         num_classes,
@@ -574,14 +591,10 @@ def osnet_x0_25(num_classes=1000, pretrained=True, loss='softmax', **kwargs):
         loss=loss,
         **kwargs
     )
-    if pretrained:
-        init_pretrained_weights(model, key='osnet_x0_25')
-    return model
+    return model, InitPretrainedWeights(key='osnet_x0_25')
 
 
-def osnet_ibn_x1_0(
-    num_classes=1000, pretrained=True, loss='softmax', **kwargs
-):
+def osnet_ibn_x1_0(num_classes=1000, loss='softmax', **kwargs):
     # standard size (width x1.0) + IBN layer
     # Ref: Pan et al. Two at Once: Enhancing Learning and Generalization Capacities via IBN-Net. ECCV, 2018.
     model = OSNet(
@@ -593,6 +606,18 @@ def osnet_ibn_x1_0(
         IN=True,
         **kwargs
     )
-    if pretrained:
-        init_pretrained_weights(model, key='osnet_ibn_x1_0')
-    return model
+    return model, InitPretrainedWeights(key='osnet_ibn_x1_0')
+
+def osnet_my(num_classes=1000, loss='softmax', **kwargs):
+    # standard size (width x1.0) + IBN layer
+    # Ref: Pan et al. Two at Once: Enhancing Learning and Generalization Capacities via IBN-Net. ECCV, 2018.
+    model = OSNet(
+        num_classes,
+        blocks=[OSBlock, OSBlock, OSBlock],
+        layers=[2, 2, 2],
+        channels=[64, 256, 384, 512],
+        loss=loss,
+        IN=True,
+        **kwargs
+    )
+    return model, InitPretrainedWeights(key='osnet_my')

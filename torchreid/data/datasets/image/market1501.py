@@ -62,12 +62,17 @@ class Market1501(ImageDataset):
         super(Market1501, self).__init__(train, query, gallery, **kwargs)
 
     def process_dir(self, dir_path, relabel=False):
-        img_paths = glob.glob(osp.join(dir_path, '*.jpg'))
+        img_paths = glob.glob(osp.join(dir_path, '*.*'))
         pattern = re.compile(r'([-\d]+)_c(\d)')
 
         pid_container = set()
         for img_path in img_paths:
-            pid, _ = map(int, pattern.search(img_path).groups())
+            # print(img_path)
+            search_res = pattern.search(img_path)
+            if search_res is None:
+                print("warning: ignore: " + img_path)
+                continue
+            pid, _ = map(int, search_res.groups())
             if pid == -1:
                 continue # junk images are just ignored
             pid_container.add(pid)
@@ -75,7 +80,11 @@ class Market1501(ImageDataset):
 
         data = []
         for img_path in img_paths:
-            pid, camid = map(int, pattern.search(img_path).groups())
+            search_res = pattern.search(img_path)
+            if search_res is None:
+                print("warning: ignore: " + img_path)
+                continue
+            pid, camid = map(int, search_res.groups())
             if pid == -1:
                 continue # junk images are just ignored
             assert 0 <= pid <= 1501 # pid == 0 means background
