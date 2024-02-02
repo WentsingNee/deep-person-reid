@@ -87,6 +87,12 @@ class CUHK03(ImageDataset):
         query = split['query']
         gallery = split['gallery']
 
+        for l in [train, query, gallery]:
+            for e in l:
+                e[0] = e[0].replace("\\", "/")
+                e[0] = e[0].replace("./data/", "")
+                e[0] = osp.join(self.root, e[0])
+
         super(CUHK03, self).__init__(train, query, gallery, **kwargs)
 
     def preprocess_split(self):
