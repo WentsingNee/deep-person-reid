@@ -384,7 +384,11 @@ class InitPretrainedWeights:
 
         Layers that don't match with pretrained layers in name or size are kept unchanged.
         """
-        model_dir, file_name = os.path.split(pretrained_model)
+        if pretrained_model is not None:
+            model_dir, file_name = os.path.split(pretrained_model)
+        else:
+            model_dir = None
+            file_name = None
         pretrain_dict = model_zoo.load_url(self.model_url, model_dir=model_dir, file_name=file_name)
         model_dict = model.state_dict()
         pretrain_dict = {
