@@ -22,3 +22,9 @@ chardet
 # openvino2tensorflow
 # tensorflow
 # tensorflow_datasets
+
+####
+torch
+torchvision
+timm
+tensorboard
